@@ -1,0 +1,368 @@
+name: Python Complete CI/CD Pipeline
+
+# 触发条件：推送到主要分支、创建PR或手动触发
+on:
+  push:
+    branches: [ main, int ]  # 主分支和开发分支
+  pull_request:
+    branches: [ main, int ]
+  workflow_dispatch:  # 允许手动触发
+
+# 环境变量配置
+env:
+  # 基础配置
+  PROJECT_NAME: "my-python-app"
+  PYTHON_DEFAULT_VERSION: "3.11"
+  # 目录配置
+  SRC_DIR: "src"
+  TEST_DIR: "tests"
+  REQUIREMENTS_FILE: "requirements.txt"
+  DEV_REQUIREMENTS_FILE: "requirements-dev.txt"
+  BUILD_DIR: "dist"
+  TEST_REPORT_DIR: "test-reports"
+  # 工具配置
+  LINT_THRESHOLD: "8.0"  # 代码质量最低分数
+
+# 工作流任务
+jobs:
+  ###########################
+  # 1. 准备阶段：代码检出和缓存设置
+  ###########################
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      # 输出Python版本用于后续任务
+      python-version: ${{ env.PYTHON_DEFAULT_VERSION }}
+      # 输出当前提交哈希用于版本标识
+      commit-hash: ${{ github.sha }}
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 拉取完整历史用于版本号生成
+
+      - name: 设置Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT_VERSION }}
+
+      - name: 缓存依赖
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+            **/__pycache__
+          key: ${{ runner.os }}-pip-${{ hashFiles(env.REQUIREMENTS_FILE, env.DEV_REQUIREMENTS_FILE) }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: 安装基础依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ${{ env.REQUIREMENTS_FILE }}
+          pip install -r ${{ env.DEV_REQUIREMENTS_FILE }}
+
+  ###########################
+  # 2. 代码质量检查
+  ###########################
+  code-quality:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 恢复Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.prepare.outputs.python-version }}
+
+      - name: 恢复依赖缓存
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles(env.REQUIREMENTS_FILE, env.DEV_REQUIREMENTS_FILE) }}
+
+      - name: 安装依赖
+        run: |
+          pip install -r ${{ env.DEV_REQUIREMENTS_FILE }}
+
+      - name: 代码风格检查 (flake8)
+        run: |
+          flake8 ${{ env.SRC_DIR }} ${{ env.TEST_DIR }} \
+            --count \
+            --exit-zero \
+            --max-complexity=10 \
+            --max-line-length=127 \
+            --statistics
+
+      - name: 代码格式化检查 (black)
+        run: |
+          black --check ${{ env.SRC_DIR }} ${{ env.TEST_DIR }}
+
+      - name: 导入顺序检查 (isort)
+        run: |
+          isort --check --profile black ${{ env.SRC_DIR }} ${{ env.TEST_DIR }}
+
+      - name: 静态类型检查 (mypy)
+        run: |
+          mypy ${{ env.SRC_DIR }} --ignore-missing-imports
+
+      - name: 代码质量评分 (pylint)
+        run: |
+          pylint ${{ env.SRC_DIR }} --fail-under=${{ env.LINT_THRESHOLD }}
+
+  ###########################
+  # 3. 测试阶段
+  ###########################
+  test:
+    needs: code-quality
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 测试多个Python版本确保兼容性
+        python-version: ["3.9", "3.10", "3.11"]
+        # 测试不同环境配置
+        environment: ["development", "production"]
+      fail-fast: false  # 一个版本失败不影响其他版本测试
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 恢复依赖缓存
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles(env.REQUIREMENTS_FILE) }}
+
+      - name: 安装依赖
+        run: |
+          pip install -r ${{ env.REQUIREMENTS_FILE }}
+          pip install -r ${{ env.DEV_REQUIREMENTS_FILE }}
+
+      - name: 准备测试报告目录
+        run: mkdir -p ${{ env.TEST_REPORT_DIR }}
+
+      - name: 运行测试 (pytest)
+        env:
+          APP_ENV: ${{ matrix.environment }}
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: |
+          pytest ${{ env.TEST_DIR }} \
+            --cov=${{ env.SRC_DIR }} \
+            --cov-report=xml \
+            --cov-report=term \
+            --junitxml=${{ env.TEST_REPORT_DIR }}/results-${{ matrix.python-version }}-${{ matrix.environment }}.xml \
+            -v
+
+      - name: 上传测试报告
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-reports-${{ matrix.python-version }}-${{ matrix.environment }}
+          path: ${{ env.TEST_REPORT_DIR }}
+
+      - name: 上传覆盖率报告到Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-${{ matrix.python-version }}
+          fail_ci_if_error: true
+
+  ###########################
+  # 4. 构建阶段
+  ###########################
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    # 只在特定分支构建
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/int'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要完整历史来生成版本号
+
+      - name: 设置Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.prepare.outputs.python-version }}
+
+      - name: 恢复依赖缓存
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles(env.REQUIREMENTS_FILE) }}
+
+      - name: 安装构建依赖
+        run: |
+          pip install --upgrade pip
+          pip install build setuptools wheel
+
+      - name: 生成版本号
+        id: version-generator
+        run: |
+          # 提取最近的tag作为基础版本
+          LAST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v0.0.0")
+          # 提取主版本号
+          MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
+          MINOR=$(echo $LAST_TAG | cut -d. -f2)
+          PATCH=$(echo $LAST_TAG | cut -d. -f3)
+          
+          # 如果是main分支，自动递增修订号
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            NEW_PATCH=$((PATCH + 1))
+            VERSION="v$MAJOR.$MINOR.$NEW_PATCH"
+          else
+            # 开发分支使用开发版本号
+            COMMIT_COUNT=$(git rev-list --count HEAD ^$LAST_TAG)
+            VERSION="$LAST_TAG-dev.$COMMIT_COUNT+${{ needs.prepare.outputs.commit-hash }}"
+          fi
+          
+          echo "生成版本号: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: 构建Python包
+        run: |
+          python -m build --outdir ${{ env.BUILD_DIR }}
+
+      - name: 验证构建产物
+        run: |
+          # 检查是否生成了whl和tar.gz文件
+          if [ $(ls ${{ env.BUILD_DIR }}/*.whl 2>/dev/null | wc -l) -eq 0 ]; then
+            echo "错误: 未生成wheel包"
+            exit 1
+          fi
+          
+          if [ $(ls ${{ env.BUILD_DIR }}/*.tar.gz 2>/dev/null | wc -l) -eq 0 ]; then
+            echo "错误: 未生成源码包"
+            exit 1
+          fi
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.PROJECT_NAME }}-build-${{ steps.version-generator.outputs.version }}
+          path: ${{ env.BUILD_DIR }}
+          retention-days: 14  # 保留14天
+
+  ###########################
+  # 5. 部署阶段 - 开发环境
+  ###########################
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/int'  # 只在开发分支部署到开发环境
+    environment:
+      name: development
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v3
+        with:
+          pattern: ${{ env.PROJECT_NAME }}-build-*
+          path: ${{ env.BUILD_DIR }}
+          merge-multiple: true
+
+      - name: 设置Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.prepare.outputs.python-version }}
+
+      - name: 安装部署工具
+        run: |
+          pip install twine
+
+      - name: 部署到开发环境 (TestPyPI)
+        id: deploy
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          twine upload --repository testpypi ${{ env.BUILD_DIR }}/*
+          echo "deployment-url=https://test.pypi.org/project/${{ env.PROJECT_NAME }}/" >> $GITHUB_OUTPUT
+
+      - name: 发送部署通知到Slack
+        uses: act10ns/slack@v2
+        with:
+          status: ${{ job.status }}
+          channel: '#dev-updates'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+        if: always()  # 无论成功失败都发送通知
+
+  ###########################
+  # 6. 部署阶段 - 生产环境
+  ###########################
+  deploy-prod:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'  # 只在主分支部署到生产环境
+    environment:
+      name: production  # 需在GitHub仓库设置中配置保护规则，如手动批准
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v3
+        with:
+          pattern: ${{ env.PROJECT_NAME }}-build-*
+          path: ${{ env.BUILD_DIR }}
+          merge-multiple: true
+
+      - name: 设置Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.prepare.outputs.python-version }}
+
+      - name: 安装部署工具
+        run: |
+          pip install twine
+
+      - name: 验证生产版本
+        run: |
+          # 检查版本号格式是否正确
+          VERSION_FILE=$(ls ${{ env.BUILD_DIR }}/*.tar.gz)
+          if [[ ! $VERSION_FILE =~ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "错误: 生产版本号格式不正确"
+            exit 1
+          fi
+
+      - name: 部署到生产环境 (PyPI)
+        id: deploy
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine upload ${{ env.BUILD_DIR }}/*
+          echo "deployment-url=https://pypi.org/project/${{ env.PROJECT_NAME }}/" >> $GITHUB_OUTPUT
+
+      - name: 创建GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ env.BUILD_DIR }}/*
+          name: Release ${{ steps.version-generator.outputs.version }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 发送生产部署通知到Slack
+        uses: act10ns/slack@v2
+        with:
+          status: ${{ job.status }}
+          channel: '#prod-alerts'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+        if: always()
