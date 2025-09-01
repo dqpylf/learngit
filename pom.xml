@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>python-jib-example</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <jib-maven-plugin.version>3.3.2</jib-maven-plugin.version>
+        <python.image>python:3.9-slim</python.image>
+        <image.repository>your-registry/your-project</image.repository>
+        <image.tag>1.0.0</image.tag>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <version>${jib-maven-plugin.version}</version>
+                <configuration>
+                    <!-- 基础镜像使用 Python 官方镜像 -->
+                    <from>
+                        <image>${python.image}</image>
+                    </from>
+                    
+                    <!-- 目标镜像信息 -->
+                    <to>
+                        <image>ghcr.io/dqpylf/learngit:latest</image>
+                        <!-- 如果需要推送到私有仓库，添加认证信息 -->
+                        <!-- 
+                        <auth>
+                            <username>${registry.username}</username>
+                            <password>${registry.password}</password>
+                        </auth>
+                        -->
+                    </to>
+                    
+                    <!-- 配置容器信息 -->
+                    <container>
+                        <user>root</user>
+                        <workingDirectory>/app</workingDirectory>
+                        <entrypoint>["python", "/app/run.py"]</entrypoint>
+                        <ports>
+                            <port>8080</port>
+                        </ports>
+                    </container>
+                    
+                    <!-- 配置文件复制 -->
+                    <extraDirectories>
+                        <paths>
+                            <path>
+                                <from>src/main/python</from>
+                                <into>/app</into>
+                            </path>
+                        </paths>
+                    </extraDirectories>
+                    
+                    <!-- 配置构建步骤，安装依赖 -->
+                    <layers>
+                        <layer>
+                            <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
+                            <files>
+                                <file>
+                                    <source>src/main/python/requirements.txt</source>
+                                    <destination>/app/requirements.txt</destination>
+                                </file>
+                            </files>
+                        </layer>
+                    </layers>
+                    
+                    <!-- 配置构建命令，安装 Python 依赖 -->
+                    <containerizingMode>packaged</containerizingMode>
+                    <buildArgs>
+                        <PYTHON_REQUIREMENTS>requirements.txt</PYTHON_REQUIREMENTS>
+                    </buildArgs>
+                </configuration>
+                
+                <!-- 配置构建生命周期 -->
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
