@@ -47,7 +47,7 @@
                         <workingDirectory>/app</workingDirectory>
                         <entrypoint>["python", "/app/run.py"]</entrypoint>
                         <ports>
-                            <port>8080</port>
+                            <port>5001</port>
                         </ports>
                     </container>
                     
