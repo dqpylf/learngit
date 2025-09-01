@@ -7,7 +7,12 @@ on:
   pull_request:
     branches: [ main, int ]
   workflow_dispatch:  # 允许手动触发
-
+  paths-ignore:  # 忽略 Markdown/配置文件变更，避免无效触发
+      - '**.md'          # 忽略所有 Markdown 文件
+      - '.github/workflows/**'  # 忽略工作流配置文件本身的变更
+      - '.gitignore'     # 忽略 .gitignore 文件
+      - 'README.md'      # 单独忽略 README.md（如果需要更精确控制）
+      
 # 环境变量配置
 env:
   # 基础配置
@@ -287,7 +292,7 @@ jobs:
         id: deploy
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          TWINE_PASSWORD: ${{ secrets.STAGING_SSH_KEY }}
         run: |
           twine upload --repository testpypi ${{ env.BUILD_DIR }}/*
           echo "deployment-url=https://test.pypi.org/project/${{ env.PROJECT_NAME }}/" >> $GITHUB_OUTPUT
