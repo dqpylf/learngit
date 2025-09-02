@@ -5,3 +5,11 @@ services:
     ports:
       - "5001:5001"
     restart: unless-stopped
+        # 目录挂载配置
+    volumes:
+      # 挂载本地config目录到容器内的配置文件目录（请替换容器内路径为实际路径）
+      - ./config:/app/config
+      # 挂载本地logs目录到容器内的日志文件目录（请替换容器内路径为实际路径）
+      - ./logs:/app/logs
+      # 同步容器与宿主机的时间（只读模式）
+      - /etc/localtime:/etc/localtime:ro
