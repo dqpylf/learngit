@@ -63,10 +63,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      - name: 验证Maven配置
+      - name: 验证Docker环境
         run: |
-          mvn --version
-          java -version
+          docker --version
+          echo "Docker环境验证完成"
 
   ###########################
   # 2. 代码质量检查 - 暂时注释掉
@@ -198,17 +198,6 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置Java环境
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ needs.prepare.outputs.java-version }}
-          distribution: 'temurin'
-
-      - name: 恢复Maven依赖缓存
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
 
 
 
@@ -227,13 +216,9 @@ jobs:
           echo "认证信息: ${{ github.actor }}"
           echo "Registry: ${{ env.REGISTRY }}"
           
-          # 使用dockerfile-maven-plugin构建和推送镜像
-          mvn clean dockerfile:build dockerfile:push \
-            -Ddockerfile.repository=${{ env.IMAGE_NAME }} \
-            -Ddockerfile.tag=${{ github.sha }} \
-            -Ddockerfile.username=${{ github.actor }} \
-            -Ddockerfile.password=${{ secrets.GITHUB_TOKEN }} \
-            -DskipTests=true
+          # 使用Docker原生命令构建和推送镜像
+          docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
           
           echo "Docker镜像构建并推送完成: ${{ env.IMAGE_NAME }}:${{ github.sha }}"
 
@@ -243,12 +228,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "推送latest标签..."
-          mvn dockerfile:build dockerfile:push \
-            -Ddockerfile.repository=${{ env.IMAGE_NAME }} \
-            -Ddockerfile.tag=latest \
-            -Ddockerfile.username=${{ github.actor }} \
-            -Ddockerfile.password=${{ secrets.GITHUB_TOKEN }} \
-            -DskipTests=true
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.IMAGE_NAME }}:latest
 
   ###########################
   # 5. 部署阶段 - 生产环境
