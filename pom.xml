@@ -13,8 +13,8 @@
         <maven.compiler.target>11</maven.compiler.target>
         <jib-maven-plugin.version>3.3.2</jib-maven-plugin.version>
         <python.image>python:3.9-slim</python.image>
-        <image.repository>your-registry/your-project</image.repository>
-        <image.tag>1.0.0</image.tag>
+        <image.repository>ghcr.io/dqpylf/learngit</image.repository>
+        <image.tag>latest</image.tag>
     </properties>
 
     <build>
@@ -31,7 +31,8 @@
                     
                     <!-- 目标镜像信息 -->
                     <to>
-                        <image>ghcr.io/dqpylf/learngit:latest</image>
+                        <image>${image.repository}:${image.tag}</image>
+                        <!-- GitHub Actions 会通过 GITHUB_TOKEN 自动认证 -->
                         <!-- 如果需要推送到私有仓库，添加认证信息 -->
                         <!-- 
                         <auth>
