@@ -7,6 +7,7 @@
     <groupId>com.example</groupId>
     <artifactId>python-jib-example</artifactId>
     <version>1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
@@ -46,7 +47,11 @@
                     <container>
                         <user>root</user>
                         <workingDirectory>/app</workingDirectory>
-                        <entrypoint>["python", "/app/run.py"]</entrypoint>
+                        <entrypoint>
+                            <shell>sh</shell>
+                            <option>-c</option>
+                            <arg>pip install -r requirements.txt &amp;&amp; python run.py</arg>
+                        </entrypoint>
                         <ports>
                             <port>5001</port>
                         </ports>
@@ -65,6 +70,7 @@
                     <!-- 配置构建步骤，安装依赖 -->
                     <layers>
                         <layer>
+                            <name>python-requirements</name>
                             <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
                             <files>
                                 <file>
@@ -74,23 +80,7 @@
                             </files>
                         </layer>
                     </layers>
-                    
-                    <!-- 配置构建命令，安装 Python 依赖 -->
-                    <containerizingMode>packaged</containerizingMode>
-                    <buildArgs>
-                        <PYTHON_REQUIREMENTS>requirements.txt</PYTHON_REQUIREMENTS>
-                    </buildArgs>
                 </configuration>
-                
-                <!-- 配置构建生命周期 -->
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>build</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>

@@ -262,7 +262,7 @@ jobs:
 
       - name: 构建并推送Docker镜像 (使用 Jib)
         run: |
-          mvn clean compile jib:build \
+          mvn clean jib:build \
             -Djib.to.image=${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}
             
       - name: 推送latest标签 (仅main分支)
