@@ -81,7 +81,7 @@
                     </buildArgs>
                 </configuration>
                 
-                <!-- 配置构建生命周期 -->
+                <!-- 配置构建生命周期11111 -->
                 <executions>
                     <execution>
                         <phase>package</phase>
