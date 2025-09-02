@@ -1,13 +1,12 @@
 services:
-
   learngit:
-
     image: ghcr.io/dqpylf/learngit:latest
-
-    container_name: learngit
-
+    container_name: learngit-prod
     ports:
-
       - "5001:5001"
-
     restart: unless-stopped
+    networks:
+      - learngit-network
+networks:
+  learngit-network:
+    driver: bridge

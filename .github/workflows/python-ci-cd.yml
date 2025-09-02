@@ -1,4 +1,4 @@
-name: Python Complete CI/CD Pipeline
+name: Python Docker CI/CD Pipeline (Maven + Jib)
 
 # 触发条件：推送到主要分支、创建PR或手动触发
 on:
@@ -365,39 +365,55 @@ jobs:
               echo "警告: 旧的docker-compose.yml文件不存在，跳过停止容器"
           fi
           
-          # 创建生产环境docker-compose.yml文件
-          cat > docker-compose.yml << 'COMPOSE_EOF'
-          services:
-            learngit:
-              image: \$IMAGE_TAG
-              container_name: learngit-prod
-              ports:
-                - "5001:5001"
-              restart: unless-stopped
-              environment:
-                - APP_ENV=production
-              volumes:
-                - ./logs:/app/logs
-                - ./config:/app/config
-              networks:
-                - learngit-network
-              healthcheck:
-                test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
-                interval: 30s
-                timeout: 10s
-                retries: 3
-                start_period: 40s
+          # 下载生产环境配置文件
+          echo "正在下载生产环境配置文件..."
           
-          networks:
-            learngit-network:
-              driver: bridge
-          COMPOSE_EOF
+          # 使用 GitHub API 下载文件 (支持私有仓库)
+          DOWNLOAD_SUCCESS=false
           
-          # 替换环境变量
-          sed -i "s|\\\$IMAGE_TAG|\$IMAGE_TAG|g" docker-compose.yml
+          # 从main分支下载生产环境配置文件
+          if curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  -H "Accept: application/vnd.github.v3.raw" \
+                  -o docker-compose.prod.yml \
+                  "https://api.github.com/repos/${{ github.repository_owner }}/${{ env.PROJECT_NAME }}/contents/deploy/docker-compose.prod.yml?ref=main"; then
+              echo "从main分支下载成功"
+              DOWNLOAD_SUCCESS=true
+          else
+              echo "从main分支下载失败"
+              DOWNLOAD_SUCCESS=false
+          fi
           
-          echo "Docker Compose配置文件:"
-          cat docker-compose.yml
+          # 验证文件下载是否成功
+          if [ "\$DOWNLOAD_SUCCESS" = false ] || [ ! -s docker-compose.prod.yml ]; then
+              echo "错误: docker-compose.prod.yml 下载失败或为空"
+              echo "尝试显示下载的内容:"
+              cat docker-compose.prod.yml 2>/dev/null || echo "无法读取文件内容"
+              echo "当前目录内容:"
+              ls -la
+              exit 1
+          fi
+          
+          echo "生产环境配置文件下载成功"
+          echo "文件大小: \$(wc -c < docker-compose.prod.yml) 字节"
+          echo "文件前几行内容:"
+          head -5 docker-compose.prod.yml
+          
+          # 重命名为标准的 docker-compose.yml
+          mv docker-compose.prod.yml docker-compose.yml
+          echo "已重命名为 docker-compose.yml"
+          
+          # 更新镜像标签
+          echo "更新镜像标签: \$IMAGE_TAG"
+          # 显示替换前的内容
+          echo "替换前的镜像配置:"
+          grep -n "image:" docker-compose.yml || echo "未找到image配置"
+          
+          # 使用更精确的sed命令替换镜像标签
+          sed -i "s|image: ghcr.io/dqpylf/learngit:.*|image: \$IMAGE_TAG|g" docker-compose.yml
+          
+          # 显示替换后的内容
+          echo "替换后的镜像配置:"
+          grep -n "image:" docker-compose.yml || echo "未找到image配置"
           
           # 创建必要的目录
           mkdir -p logs config
@@ -557,33 +573,55 @@ jobs:
               echo "警告: 旧的docker-compose.yml文件不存在，跳过停止容器"
           fi
           
-          # 创建测试环境docker-compose.yml文件
-          cat > docker-compose.yml << 'COMPOSE_EOF'
-          services:
-            learngit:
-              image: \$IMAGE_TAG
-              container_name: learngit-test
-              ports:
-                - "5002:5001"
-              restart: unless-stopped
-              environment:
-                - APP_ENV=testing
-              volumes:
-                - ./logs:/app/logs
-                - ./config:/app/config
-              networks:
-                - learngit-test-network
+          # 下载测试环境配置文件
+          echo "正在下载测试环境配置文件..."
           
-          networks:
-            learngit-test-network:
-              driver: bridge
-          COMPOSE_EOF
+          # 使用 GitHub API 下载文件 (支持私有仓库)
+          DOWNLOAD_SUCCESS=false
           
-          # 替换环境变量
-          sed -i "s|\\\$IMAGE_TAG|\$IMAGE_TAG|g" docker-compose.yml
+          # 从int分支下载测试环境配置文件
+          if curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  -H "Accept: application/vnd.github.v3.raw" \
+                  -o docker-compose.test.yml \
+                  "https://api.github.com/repos/${{ github.repository_owner }}/${{ env.PROJECT_NAME }}/contents/deploy/docker-compose.test.yml?ref=int"; then
+              echo "从int分支下载成功"
+              DOWNLOAD_SUCCESS=true
+          else
+              echo "从int分支下载失败"
+              DOWNLOAD_SUCCESS=false
+          fi
           
-          echo "Docker Compose配置文件:"
-          cat docker-compose.yml
+          # 验证文件下载是否成功
+          if [ "\$DOWNLOAD_SUCCESS" = false ] || [ ! -s docker-compose.test.yml ]; then
+              echo "错误: docker-compose.test.yml 下载失败或为空"
+              echo "尝试显示下载的内容:"
+              cat docker-compose.test.yml 2>/dev/null || echo "无法读取文件内容"
+              echo "当前目录内容:"
+              ls -la
+              exit 1
+          fi
+          
+          echo "测试环境配置文件下载成功"
+          echo "文件大小: \$(wc -c < docker-compose.test.yml) 字节"
+          echo "文件前几行内容:"
+          head -5 docker-compose.test.yml
+          
+          # 重命名为标准的 docker-compose.yml
+          mv docker-compose.test.yml docker-compose.yml
+          echo "已重命名为 docker-compose.yml"
+          
+          # 更新镜像标签
+          echo "更新镜像标签: \$IMAGE_TAG"
+          # 显示替换前的内容
+          echo "替换前的镜像配置:"
+          grep -n "image:" docker-compose.yml || echo "未找到image配置"
+          
+          # 使用更精确的sed命令替换镜像标签
+          sed -i "s|image: ghcr.io/dqpylf/learngit:.*|image: \$IMAGE_TAG|g" docker-compose.yml
+          
+          # 显示替换后的内容
+          echo "替换后的镜像配置:"
+          grep -n "image:" docker-compose.yml || echo "未找到image配置"
           
           # 创建必要的目录
           mkdir -p logs config
