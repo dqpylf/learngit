@@ -227,26 +227,15 @@ jobs:
           echo "认证信息: ${{ github.actor }}"
           echo "Registry: ${{ env.REGISTRY }}"
           
-          # 添加详细的Jib日志来诊断推送问题
-          mvn compile jib:build \
-            -Dimage=${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            -DskipTests=true \
-            -Djib.to.auth.username=${{ github.actor }} \
-            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }} \
-            -Djib.console=plain \
-            -Djib.verbosity=info \
-            -X
+          # 使用dockerfile-maven-plugin构建和推送镜像
+          mvn clean dockerfile:build dockerfile:push \
+            -Ddockerfile.repository=${{ env.IMAGE_NAME }} \
+            -Ddockerfile.tag=${{ github.sha }} \
+            -Ddockerfile.username=${{ github.actor }} \
+            -Ddockerfile.password=${{ secrets.GITHUB_TOKEN }} \
+            -DskipTests=true
           
-          echo "Jib构建命令执行完成"
-          
-          # 立即验证推送结果
-          echo "验证镜像是否已推送..."
-          if docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}; then
-            echo "镜像推送成功验证"
-            docker rmi ${{ env.IMAGE_NAME }}:${{ github.sha }} || true
-          else
-            echo "警告: 镜像推送验证失败，但继续执行部署..."
-          fi
+          echo "Docker镜像构建并推送完成: ${{ env.IMAGE_NAME }}:${{ github.sha }}"
 
       - name: 推送latest标签 (仅main分支)
         if: github.ref == 'refs/heads/main'
@@ -254,8 +243,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "推送latest标签..."
-          mvn compile jib:build \
-            -Dimage=${{ env.IMAGE_NAME }}:latest \
+          mvn dockerfile:build dockerfile:push \
+            -Ddockerfile.repository=${{ env.IMAGE_NAME }} \
+            -Ddockerfile.tag=latest \
+            -Ddockerfile.username=${{ github.actor }} \
+            -Ddockerfile.password=${{ secrets.GITHUB_TOKEN }} \
             -DskipTests=true
 
   ###########################

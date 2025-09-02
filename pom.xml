@@ -5,68 +5,26 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.example</groupId>
-    <artifactId>python-jib-example</artifactId>
+    <artifactId>learngit</artifactId>
     <version>1.0-SNAPSHOT</version>
 
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
-        <jib-maven-plugin.version>3.3.2</jib-maven-plugin.version>
-        <python.image>python:3.9-slim</python.image>
-        <image.repository>ghcr.io/dqpylf/learngit</image.repository>
-        <image.tag>latest</image.tag>
+        <dockerfile-maven-plugin.version>1.4.13</dockerfile-maven-plugin.version>
+        <docker.image.prefix>ghcr.io/dqpylf</docker.image.prefix>
     </properties>
 
     <build>
         <plugins>
             <plugin>
-                <groupId>com.google.cloud.tools</groupId>
-                <artifactId>jib-maven-plugin</artifactId>
-                <version>${jib-maven-plugin.version}</version>
+                <groupId>com.spotify</groupId>
+                <artifactId>dockerfile-maven-plugin</artifactId>
+                <version>${dockerfile-maven-plugin.version}</version>
                 <configuration>
-                    <!-- 基础镜像使用 Python 官方镜像 -->
-                    <from>
-                        <image>${python.image}</image>
-                    </from>
-                    
-                    <!-- 目标镜像信息 -->
-                    <to>
-                        <image>${image.repository}:${image.tag}</image>
-                        <!-- GitHub Actions 会通过 GITHUB_TOKEN 自动认证 -->
-                        <!-- 如果需要推送到私有仓库，添加认证信息 -->
-                        <!-- 
-                        <auth>
-                            <username>${registry.username}</username>
-                            <password>${registry.password}</password>
-                        </auth>
-                        -->
-                    </to>
-                    
-                    <!-- 配置容器信息 -->
-                    <container>
-                        <user>root</user>
-                        <workingDirectory>/app</workingDirectory>
-                        <entrypoint>
-                            <shell>sh</shell>
-                            <option>-c</option>
-                            <arg>pip install -r requirements.txt &amp;&amp; python run.py</arg>
-                        </entrypoint>
-                        <ports>
-                            <port>5001</port>
-                        </ports>
-                    </container>
-                    
-                    <!-- 配置文件复制 -->
-                    <extraDirectories>
-                        <paths>
-                            <path>
-                                <from>src/main/python</from>
-                                <into>/app</into>
-                            </path>
-                        </paths>
-                    </extraDirectories>
-                    
+                    <repository>${docker.image.prefix}/${project.artifactId}</repository>
+                    <tag>${project.version}</tag>
                 </configuration>
             </plugin>
         </plugins>
