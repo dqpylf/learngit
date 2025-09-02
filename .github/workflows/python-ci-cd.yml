@@ -3,12 +3,12 @@ name: Python Complete CI/CD Pipeline
 # 触发条件：推送到主要分支、创建PR或手动触发
 on:
   push:
-    branches: [ main, test ]  # 主分支和测试分支
+    branches: [ main, int ]  # 主分支和int分支
     paths-ignore:  # 忽略 Markdown/配置文件变更，避免无效触发
       - '**.md'          # 忽略所有 Markdown 文件
       - '.gitignore'     # 忽略 .gitignore 文件
   pull_request:
-    branches: [ main, test ]
+    branches: [ main, int ]
     paths-ignore:  # 忽略 Markdown/配置文件变更，避免无效触发
       - '**.md'          # 忽略所有 Markdown 文件
       - '.gitignore'     # 忽略 .gitignore 文件
@@ -187,7 +187,7 @@ jobs:
     needs: prepare  # 直接从准备阶段开始构建（暂时跳过代码质量检查和测试）
     runs-on: ubuntu-latest
     # 只在特定分支构建
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/int'
     outputs:
       version: ${{ steps.version-generator.outputs.version }}
       image-tag: ${{ steps.version-generator.outputs.image-tag }}
@@ -237,7 +237,7 @@ jobs:
             VERSION="v$MAJOR.$MINOR.$NEW_PATCH"
             IMAGE_TAG="$MAJOR.$MINOR.$NEW_PATCH"
           else
-            # 开发分支使用开发版本号
+
             if [[ "$HAS_TAG" == "true" ]]; then
               COMMIT_COUNT=$(git rev-list --count HEAD ^$LAST_TAG)
             else
@@ -488,7 +488,7 @@ jobs:
   deploy-test:
     needs: [build, prepare]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/test'  # 只在测试分支部署到测试环境
+    if: github.ref == 'refs/heads/int'  # 只在int分支部署到测试环境
     environment:
       name: staging
     steps:
