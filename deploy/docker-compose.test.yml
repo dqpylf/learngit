@@ -3,10 +3,5 @@ services:
     image: ghcr.io/dqpylf/learngit:latest
     container_name: learngit-test
     ports:
-      - "5002:5001"
+      - "5001:5001"
     restart: unless-stopped
-    networks:
-      - learngit-test-network
-networks:
-  learngit-test-network:
-    driver: bridge
