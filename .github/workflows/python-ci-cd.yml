@@ -13,6 +13,10 @@ on:
       - '**.md'          # 忽略所有 Markdown 文件
       - '.gitignore'     # 忽略 .gitignore 文件
   workflow_dispatch:  # 允许手动触发
+
+permissions:
+  contents: read
+  packages: write
       
 # 环境变量配置
 env:
@@ -264,11 +268,58 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          echo "开始构建镜像: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
           mvn clean jib:build \
             -Djib.to.image=${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }} \
             -Djib.to.auth.username=${{ github.actor }} \
-            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }}
-            
+            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }} \
+            -Djib.allowInsecureRegistries=false \
+            -Djib.console=plain \
+            -X
+          echo "镜像构建完成: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
+
+      - name: 验证镜像推送成功
+        run: |
+          echo "验证镜像是否成功推送到GHCR..."
+          # 尝试拉取刚推送的镜像来验证
+          docker pull ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}
+          if [ $? -eq 0 ]; then
+            echo "镜像推送验证成功"
+            docker images | grep ${{ env.IMAGE_NAME }}
+          else
+            echo "镜像推送验证失败"
+                         exit 1
+           fi
+
+      - name: 备用Docker构建 (如果Jib失败)
+        if: failure()
+        run: |
+          echo "Jib构建失败，使用Docker原生方式构建..."
+          
+          # 创建Dockerfile
+          cat > Dockerfile << 'EOF'
+          FROM python:3.9-slim
+          WORKDIR /app
+          
+          # 复制Python代码
+          COPY src/main/python/ /app/
+          
+          # 安装依赖并运行
+          RUN pip install -r requirements.txt
+          
+          # 暴露端口
+          EXPOSE 5001
+          
+          # 启动命令
+          CMD ["python", "run.py"]
+          EOF
+          
+          # 构建并推送镜像
+          docker build -t ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }} .
+          docker push ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}
+          
+          echo "备用Docker构建完成"
+             
       - name: 推送latest标签 (仅main分支)
         if: github.ref == 'refs/heads/main'
         env:
