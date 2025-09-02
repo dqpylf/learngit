@@ -1,4 +1,4 @@
 # 开发依赖
 
 # 基础依赖
--r requirements.tx
+-r requirements.txt
