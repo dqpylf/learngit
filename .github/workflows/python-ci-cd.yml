@@ -220,8 +220,19 @@ jobs:
       - name: 生成版本号
         id: version-generator
         run: |
-          # 提取最近的tag作为基础版本
-          LAST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v0.0.1")
+          # 检查是否存在tag
+          if git describe --abbrev=0 --tags 2>/dev/null; then
+            # 存在tag，使用最近的tag
+            LAST_TAG=$(git describe --abbrev=0 --tags)
+            HAS_TAG=true
+          else
+            # 不存在tag，使用默认版本
+            LAST_TAG="v0.0.0"
+            HAS_TAG=false
+          fi
+          
+          echo "最近的tag: $LAST_TAG (存在真实tag: $HAS_TAG)"
+          
           # 提取主版本号
           MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
           MINOR=$(echo $LAST_TAG | cut -d. -f2)
@@ -233,7 +244,13 @@ jobs:
             VERSION="v$MAJOR.$MINOR.$NEW_PATCH"
           else
             # 开发分支使用开发版本号
-            COMMIT_COUNT=$(git rev-list --count HEAD ^$LAST_TAG)
+            if [[ "$HAS_TAG" == "true" ]]; then
+              # 有真实tag，计算从该tag以来的提交数
+              COMMIT_COUNT=$(git rev-list --count HEAD ^$LAST_TAG)
+            else
+              # 没有tag，计算总提交数
+              COMMIT_COUNT=$(git rev-list --count HEAD)
+            fi
             VERSION="$LAST_TAG-dev.$COMMIT_COUNT+${{ needs.prepare.outputs.commit-hash }}"
           fi
           
