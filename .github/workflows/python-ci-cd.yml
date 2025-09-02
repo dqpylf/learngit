@@ -269,25 +269,48 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "开始构建镜像: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
+          echo "认证信息: ${{ github.actor }}"
           
+          # 设置Jib认证配置
           mvn clean jib:build \
             -Djib.to.image=${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }} \
+            -Djib.to.registry=${{ env.REGISTRY }} \
             -Djib.to.auth.username=${{ github.actor }} \
             -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }} \
             -Djib.allowInsecureRegistries=false \
-            -Djib.console=plain
+            -Djib.console=plain \
+            -X
           
-          echo "镜像构建完成: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
+          # 验证推送结果
+          if [ $? -eq 0 ]; then
+            echo "镜像构建并推送成功: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
+            
+            # 立即测试拉取以验证推送
+            echo "测试镜像拉取..."
+            if docker pull ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}; then
+              echo "镜像推送验证成功"
+              docker rmi ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }} || true
+            else
+              echo "警告: 镜像推送可能有问题，但继续执行..."
+            fi
+          else
+            echo "Jib构建失败"
+            exit 1
+          fi
 
       - name: 推送latest标签 (仅main分支)
         if: github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          echo "推送latest标签..."
           mvn jib:build \
             -Djib.to.image=${{ env.IMAGE_NAME }}:latest \
+            -Djib.to.registry=${{ env.REGISTRY }} \
             -Djib.to.auth.username=${{ github.actor }} \
-            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }}
+            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }} \
+            -Djib.allowInsecureRegistries=false \
+            -Djib.console=plain
 
   ###########################
   # 5. 部署阶段 - 生产环境
