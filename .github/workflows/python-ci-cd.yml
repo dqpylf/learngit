@@ -271,32 +271,13 @@ jobs:
           echo "开始构建镜像: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
           echo "认证信息: ${{ github.actor }}"
           
-          # 设置Jib认证配置
-          mvn clean jib:build \
-            -Djib.to.image=${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }} \
-            -Djib.to.registry=${{ env.REGISTRY }} \
-            -Djib.to.auth.username=${{ github.actor }} \
-            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }} \
-            -Djib.allowInsecureRegistries=false \
-            -Djib.console=plain \
-            -X
+          # 使用与ci-cd.yml相同的简洁配置
+          mvn jib:build \
+            -Dimage=${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }} \
+            -DskipTests=true
           
-          # 验证推送结果
-          if [ $? -eq 0 ]; then
-            echo "镜像构建并推送成功: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
-            
-            # 立即测试拉取以验证推送
-            echo "测试镜像拉取..."
-            if docker pull ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}; then
-              echo "镜像推送验证成功"
-              docker rmi ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }} || true
-            else
-              echo "警告: 镜像推送可能有问题，但继续执行..."
-            fi
-          else
-            echo "Jib构建失败"
-            exit 1
-          fi
+          
+          echo "镜像构建完成: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
 
       - name: 推送latest标签 (仅main分支)
         if: github.ref == 'refs/heads/main'
@@ -305,12 +286,8 @@ jobs:
         run: |
           echo "推送latest标签..."
           mvn jib:build \
-            -Djib.to.image=${{ env.IMAGE_NAME }}:latest \
-            -Djib.to.registry=${{ env.REGISTRY }} \
-            -Djib.to.auth.username=${{ github.actor }} \
-            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }} \
-            -Djib.allowInsecureRegistries=false \
-            -Djib.console=plain
+            -Dimage=${{ env.IMAGE_NAME }}:latest \
+            -DskipTests=true
 
   ###########################
   # 5. 部署阶段 - 生产环境
