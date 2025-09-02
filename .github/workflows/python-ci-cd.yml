@@ -4,14 +4,19 @@ name: Python Complete CI/CD Pipeline
 on:
   push:
     branches: [ main, int ]  # 主分支和开发分支
-  pull_request:
-    branches: [ main, int ]
-  workflow_dispatch:  # 允许手动触发
-  paths-ignore:  # 忽略 Markdown/配置文件变更，避免无效触发
+    paths-ignore:  # 忽略 Markdown/配置文件变更，避免无效触发
       - '**.md'          # 忽略所有 Markdown 文件
       - '.github/workflows/**'  # 忽略工作流配置文件本身的变更
       - '.gitignore'     # 忽略 .gitignore 文件
       - 'README.md'      # 单独忽略 README.md（如果需要更精确控制）
+  pull_request:
+    branches: [ main, int ]
+    paths-ignore:  # 忽略 Markdown/配置文件变更，避免无效触发
+      - '**.md'          # 忽略所有 Markdown 文件
+      - '.github/workflows/**'  # 忽略工作流配置文件本身的变更
+      - '.gitignore'     # 忽略 .gitignore 文件
+      - 'README.md'      # 单独忽略 README.md（如果需要更精确控制）
+  workflow_dispatch:  # 允许手动触发
       
 # 环境变量配置
 env:
@@ -185,10 +190,12 @@ jobs:
   # 4. 构建阶段
   ###########################
   build:
-    needs: test
+    needs: [test, prepare]
     runs-on: ubuntu-latest
     # 只在特定分支构建
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/int'
+    outputs:
+      version: ${{ steps.version-generator.outputs.version }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -262,7 +269,7 @@ jobs:
   # 5. 部署阶段 - 开发环境
   ###########################
   deploy-dev:
-    needs: build
+    needs: [build, prepare]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/int'  # 只在开发分支部署到开发环境
     environment:
@@ -310,7 +317,7 @@ jobs:
   # 6. 部署阶段 - 生产环境
   ###########################
   deploy-prod:
-    needs: build
+    needs: [build, prepare]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'  # 只在主分支部署到生产环境
     environment:
@@ -358,7 +365,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: ${{ env.BUILD_DIR }}/*
-          name: Release ${{ steps.version-generator.outputs.version }}
+          name: Release ${{ needs.build.outputs.version }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
