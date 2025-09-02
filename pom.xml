@@ -82,7 +82,7 @@
                     </layers>
                 </configuration>
                 
-                <!-- 配置构建生命周期11111 -->
+                <!-- 配置构建生命周期 -->
                 <executions>
                     <execution>
                         <phase>package</phase>
