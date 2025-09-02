@@ -228,7 +228,7 @@ jobs:
           echo "Registry: ${{ env.REGISTRY }}"
           
           # 添加详细的Jib日志来诊断推送问题
-          mvn jib:build \
+          mvn compile jib:build \
             -Dimage=${{ env.IMAGE_NAME }}:${{ github.sha }} \
             -DskipTests=true \
             -Djib.to.auth.username=${{ github.actor }} \
@@ -254,7 +254,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "推送latest标签..."
-          mvn jib:build \
+          mvn compile jib:build \
             -Dimage=${{ env.IMAGE_NAME }}:latest \
             -DskipTests=true
 
