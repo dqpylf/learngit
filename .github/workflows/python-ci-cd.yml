@@ -261,15 +261,23 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 构建并推送Docker镜像 (使用 Jib)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mvn clean jib:build \
-            -Djib.to.image=${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}
+            -Djib.to.image=${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }} \
+            -Djib.to.auth.username=${{ github.actor }} \
+            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }}
             
       - name: 推送latest标签 (仅main分支)
         if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mvn jib:build \
-            -Djib.to.image=${{ env.IMAGE_NAME }}:latest
+            -Djib.to.image=${{ env.IMAGE_NAME }}:latest \
+            -Djib.to.auth.username=${{ github.actor }} \
+            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }}
 
   ###########################
   # 5. 部署阶段 - 生产环境
@@ -359,7 +367,6 @@ jobs:
           
           # 创建生产环境docker-compose.yml文件
           cat > docker-compose.yml << 'COMPOSE_EOF'
-          version: '3.8'
           services:
             learngit:
               image: \$IMAGE_TAG
@@ -552,7 +559,6 @@ jobs:
           
           # 创建测试环境docker-compose.yml文件
           cat > docker-compose.yml << 'COMPOSE_EOF'
-          version: '3.8'
           services:
             learngit:
               image: \$IMAGE_TAG
