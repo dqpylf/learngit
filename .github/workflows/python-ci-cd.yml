@@ -3,12 +3,12 @@ name: Python Complete CI/CD Pipeline
 # 触发条件：推送到主要分支、创建PR或手动触发
 on:
   push:
-    branches: [ main, int ]  # 主分支和开发分支
+    branches: [ main, test ]  # 主分支和测试分支
     paths-ignore:  # 忽略 Markdown/配置文件变更，避免无效触发
       - '**.md'          # 忽略所有 Markdown 文件
       - '.gitignore'     # 忽略 .gitignore 文件
   pull_request:
-    branches: [ main, int ]
+    branches: [ main, test ]
     paths-ignore:  # 忽略 Markdown/配置文件变更，避免无效触发
       - '**.md'          # 忽略所有 Markdown 文件
       - '.gitignore'     # 忽略 .gitignore 文件
@@ -187,7 +187,7 @@ jobs:
     needs: prepare  # 直接从准备阶段开始构建（暂时跳过代码质量检查和测试）
     runs-on: ubuntu-latest
     # 只在特定分支构建
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/int'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test'
     outputs:
       version: ${{ steps.version-generator.outputs.version }}
       image-tag: ${{ steps.version-generator.outputs.image-tag }}
@@ -272,25 +272,7 @@ jobs:
             -Djib.to.image=${{ env.IMAGE_NAME }}:latest
 
   ###########################
-  # 5. 部署阶段 - 开发环境
-  ###########################
-  deploy-dev:
-    needs: [build, prepare]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/int'  # 只在开发分支部署到开发环境
-    environment:
-      name: development
-      url: https://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PROJECT_NAME }}
-    steps:
-      - name: 镜像部署成功通知
-        run: |
-          echo "Docker镜像已成功推送到开发环境"
-          echo "镜像地址: ${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}"
-          echo "镜像版本: ${{ needs.build.outputs.version }}"
-          
-
-  ###########################
-  # 6. 部署阶段 - 生产环境
+  # 5. 部署阶段 - 生产环境
   ###########################
   deploy-prod:
     needs: [build, prepare]
@@ -300,6 +282,9 @@ jobs:
       name: production  # 需在GitHub仓库设置中配置保护规则，如手动批准
       url: https://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PROJECT_NAME }}
     steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        
       - name: 验证生产镜像版本
         run: |
           # 验证版本号格式（语义版本）
@@ -311,12 +296,166 @@ jobs:
           fi
           echo "版本号验证通过: $VERSION"
 
-      - name: 镜像生产环境部署成功通知
+      - name: 部署到生产服务器
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          IMAGE_TAG: ${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}
         run: |
-          echo "Docker镜像已成功推送到生产环境"
-          echo "镜像地址: ${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}"
-          echo "镜像版本: ${{ needs.build.outputs.version }}"
-          echo "Latest标签: ${{ env.IMAGE_NAME }}:latest"
+          # 保存SSH私钥
+          echo "$DEPLOY_KEY" > deploy_key
+          chmod 600 deploy_key
+          
+          # 创建部署脚本
+          cat > deploy.sh << EOF
+          #!/bin/bash
+          set -e
+          
+          # 设置环境变量
+          DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+          IMAGE_TAG="${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}"
+          
+          echo "开始部署到生产环境..."
+          echo "部署路径: \$DEPLOY_PATH"
+          echo "镜像标签: \$IMAGE_TAG"
+          
+          # 验证必要的环境变量
+          if [ -z "\$DEPLOY_PATH" ]; then
+              echo "错误: DEPLOY_PATH 环境变量未设置或为空"
+              exit 1
+          fi
+          
+          if [ -z "\$IMAGE_TAG" ]; then
+              echo "错误: IMAGE_TAG 环境变量未设置"
+              exit 1
+          fi
+          
+          # 检查必要的命令是否存在
+          command -v docker >/dev/null 2>&1 || { echo "错误: 需要 docker 命令" >&2; exit 1; }
+          command -v docker-compose >/dev/null 2>&1 || { echo "错误: 需要 docker-compose 命令" >&2; exit 1; }
+          
+          # 登录到容器注册表
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          
+          # 创建部署目录
+          mkdir -p \$DEPLOY_PATH
+          cd \$DEPLOY_PATH
+          echo "当前工作目录: \$(pwd)"
+          
+          # 备份旧版本（如果存在）
+          if [ -f docker-compose.yml ]; then
+              cp docker-compose.yml docker-compose.yml.backup.\$(date +%Y%m%d_%H%M%S)
+              echo "已备份旧配置文件"
+          fi
+          
+          # 停止旧容器（如果存在）
+          if [ -f docker-compose.yml ]; then
+              docker-compose down || true
+          else
+              echo "警告: 旧的docker-compose.yml文件不存在，跳过停止容器"
+          fi
+          
+          # 创建生产环境docker-compose.yml文件
+          cat > docker-compose.yml << 'COMPOSE_EOF'
+          version: '3.8'
+          services:
+            learngit:
+              image: \$IMAGE_TAG
+              container_name: learngit-prod
+              ports:
+                - "5001:5001"
+              restart: unless-stopped
+              environment:
+                - APP_ENV=production
+              volumes:
+                - ./logs:/app/logs
+                - ./config:/app/config
+              networks:
+                - learngit-network
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+                start_period: 40s
+          
+          networks:
+            learngit-network:
+              driver: bridge
+          COMPOSE_EOF
+          
+          # 替换环境变量
+          sed -i "s|\\\$IMAGE_TAG|\$IMAGE_TAG|g" docker-compose.yml
+          
+          echo "Docker Compose配置文件:"
+          cat docker-compose.yml
+          
+          # 创建必要的目录
+          mkdir -p logs config
+          
+          # 拉取最新镜像
+          echo "拉取最新镜像: \$IMAGE_TAG"
+          docker-compose pull
+          
+          # 启动新容器
+          echo "启动生产环境容器..."
+          docker-compose up -d
+          
+          # 等待容器启动
+          echo "等待容器启动..."
+          sleep 15
+          
+          # 健康检查
+          echo "执行健康检查..."
+          MAX_RETRIES=12
+          RETRY_COUNT=0
+          
+          while [ \$RETRY_COUNT -lt \$MAX_RETRIES ]; do
+              if docker-compose ps | grep -q "Up"; then
+                  echo "生产环境部署成功！"
+                  docker-compose ps
+                  docker-compose logs --tail=20
+                  break
+              else
+                  RETRY_COUNT=\$((RETRY_COUNT + 1))
+                  echo "健康检查失败，重试 \$RETRY_COUNT/\$MAX_RETRIES ..."
+                  sleep 10
+              fi
+              
+              if [ \$RETRY_COUNT -eq \$MAX_RETRIES ]; then
+                  echo "部署失败，执行回滚..."
+                  docker-compose ps
+                  docker-compose logs
+                  
+                  # 回滚到备份版本
+                  if [ -f docker-compose.yml.backup.* ]; then
+                      BACKUP_FILE=\$(ls -t docker-compose.yml.backup.* | head -1)
+                      echo "回滚到备份文件: \$BACKUP_FILE"
+                      cp "\$BACKUP_FILE" docker-compose.yml
+                      docker-compose down || true
+                      docker-compose up -d || true
+                  fi
+                  
+                  exit 1
+              fi
+          done
+          
+          # 清理旧镜像（保留最近2个版本）
+          echo "清理旧镜像..."
+          docker image prune -f
+          
+          echo "生产环境部署完成！"
+          
+          EOF
+          
+          # 上传部署脚本并执行
+          scp -i deploy_key -o StrictHostKeyChecking=no deploy.sh $DEPLOY_USER@$DEPLOY_HOST:~/deploy.sh
+          ssh -i deploy_key -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "bash ~/deploy.sh && rm ~/deploy.sh"
+          
+          # 清理临时文件
+          rm deploy_key deploy.sh
 
       - name: 创建GitHub Release
         uses: softprops/action-gh-release@v1
@@ -342,3 +481,141 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  ###########################
+  # 6. 部署阶段 - 测试环境
+  ###########################
+  deploy-test:
+    needs: [build, prepare]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/test'  # 只在测试分支部署到测试环境
+    environment:
+      name: staging
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        
+      - name: 部署到测试服务器
+        env:
+          DEPLOY_HOST: ${{ secrets.TEST_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.TEST_DEPLOY_KEY }}
+          DEPLOY_PATH: ${{ secrets.TEST_DEPLOY_PATH }}
+          IMAGE_TAG: ${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}
+        run: |
+          # 保存SSH私钥
+          echo "$DEPLOY_KEY" > deploy_key
+          chmod 600 deploy_key
+          
+          # 创建部署脚本
+          cat > deploy.sh << EOF
+          #!/bin/bash
+          set -e
+          
+          # 设置环境变量
+          DEPLOY_PATH="${{ secrets.TEST_DEPLOY_PATH }}"
+          IMAGE_TAG="${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}"
+          
+          echo "开始部署到测试环境..."
+          echo "部署路径: \$DEPLOY_PATH"
+          echo "镜像标签: \$IMAGE_TAG"
+          
+          # 验证必要的环境变量
+          if [ -z "\$DEPLOY_PATH" ]; then
+              echo "错误: TEST_DEPLOY_PATH 环境变量未设置或为空"
+              exit 1
+          fi
+          
+          if [ -z "\$IMAGE_TAG" ]; then
+              echo "错误: IMAGE_TAG 环境变量未设置"
+              exit 1
+          fi
+          
+          # 检查必要的命令是否存在
+          command -v docker >/dev/null 2>&1 || { echo "错误: 需要 docker 命令" >&2; exit 1; }
+          command -v docker-compose >/dev/null 2>&1 || { echo "错误: 需要 docker-compose 命令" >&2; exit 1; }
+          
+          # 登录到容器注册表
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          
+          # 创建部署目录
+          mkdir -p \$DEPLOY_PATH
+          cd \$DEPLOY_PATH
+          echo "当前工作目录: \$(pwd)"
+          
+          # 停止旧容器（如果存在）
+          if [ -f docker-compose.yml ]; then
+              docker-compose down || true
+          else
+              echo "警告: 旧的docker-compose.yml文件不存在，跳过停止容器"
+          fi
+          
+          # 创建测试环境docker-compose.yml文件
+          cat > docker-compose.yml << 'COMPOSE_EOF'
+          version: '3.8'
+          services:
+            learngit:
+              image: \$IMAGE_TAG
+              container_name: learngit-test
+              ports:
+                - "5002:5001"
+              restart: unless-stopped
+              environment:
+                - APP_ENV=testing
+              volumes:
+                - ./logs:/app/logs
+                - ./config:/app/config
+              networks:
+                - learngit-test-network
+          
+          networks:
+            learngit-test-network:
+              driver: bridge
+          COMPOSE_EOF
+          
+          # 替换环境变量
+          sed -i "s|\\\$IMAGE_TAG|\$IMAGE_TAG|g" docker-compose.yml
+          
+          echo "Docker Compose配置文件:"
+          cat docker-compose.yml
+          
+          # 创建必要的目录
+          mkdir -p logs config
+          
+          # 拉取最新镜像
+          echo "拉取最新镜像: \$IMAGE_TAG"
+          docker-compose pull
+          
+          # 启动新容器
+          echo "启动测试环境容器..."
+          docker-compose up -d
+          
+          # 等待容器启动
+          echo "等待容器启动..."
+          sleep 10
+          
+          # 健康检查
+          if docker-compose ps | grep -q "Up"; then
+              echo "测试环境部署成功！"
+              docker-compose ps
+              docker-compose logs --tail=10
+          else
+              echo "部署失败，查看容器状态:"
+              docker-compose ps
+              docker-compose logs
+              exit 1
+          fi
+          
+          # 清理旧镜像
+          docker image prune -f
+          
+          echo "测试环境部署完成！"
+          
+          EOF
+          
+          # 上传部署脚本并执行
+          scp -i deploy_key -o StrictHostKeyChecking=no deploy.sh $DEPLOY_USER@$DEPLOY_HOST:~/deploy.sh
+          ssh -i deploy_key -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "bash ~/deploy.sh && rm ~/deploy.sh"
+          
+          # 清理临时文件
+          rm deploy_key deploy.sh
