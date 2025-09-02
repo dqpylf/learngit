@@ -67,30 +67,7 @@
                         </paths>
                     </extraDirectories>
                     
-                    <!-- 配置构建步骤，安装依赖 -->
-                    <layers>
-                        <layer>
-                            <name>python-requirements</name>
-                            <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
-                            <files>
-                                <file>
-                                    <source>src/main/python/requirements.txt</source>
-                                    <destination>/app/requirements.txt</destination>
-                                </file>
-                            </files>
-                        </layer>
-                    </layers>
                 </configuration>
-                
-                <!-- 配置构建生命周期 -->
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>build</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>

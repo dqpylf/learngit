@@ -225,13 +225,28 @@ jobs:
         run: |
           echo "开始构建镜像: ${{ env.IMAGE_NAME }}:${{ github.sha }}"
           echo "认证信息: ${{ github.actor }}"
+          echo "Registry: ${{ env.REGISTRY }}"
           
-          # 使用与ci-cd.yml相同的简洁配置
+          # 添加详细的Jib日志来诊断推送问题
           mvn jib:build \
             -Dimage=${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            -DskipTests=true
+            -DskipTests=true \
+            -Djib.to.auth.username=${{ github.actor }} \
+            -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }} \
+            -Djib.console=plain \
+            -Djib.verbosity=info \
+            -X
           
-          echo "镜像构建完成: ${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "Jib构建命令执行完成"
+          
+          # 立即验证推送结果
+          echo "验证镜像是否已推送..."
+          if docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}; then
+            echo "镜像推送成功验证"
+            docker rmi ${{ env.IMAGE_NAME }}:${{ github.sha }} || true
+          else
+            echo "警告: 镜像推送验证失败，但继续执行部署..."
+          fi
 
       - name: 推送latest标签 (仅main分支)
         if: github.ref == 'refs/heads/main'
