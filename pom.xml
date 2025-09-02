@@ -81,6 +81,16 @@
                         </layer>
                     </layers>
                 </configuration>
+                
+                <!-- 配置构建生命周期11111 -->
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
