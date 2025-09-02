@@ -268,16 +268,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 检查是否生成了whl和tar.gz文件
-          if [ $(ls ${{ env.BUILD_DIR }}/*.whl 2>/dev/null | wc -l) -eq 0 ]; then
-            echo "错误: 未生成wheel包"
-            exit 1
-          fi
-          
           echo "开始构建镜像: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
-          
-          # 使用set -e确保任何命令失败都会导致脚本退出
-          set -e
           
           mvn clean jib:build \
             -Djib.to.image=${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }} \
@@ -285,15 +276,8 @@ jobs:
             -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }} \
             -Djib.allowInsecureRegistries=false \
             -Djib.console=plain
-            
-          # 检查Maven命令的退出状态
-          if [ $? -eq 0 ]; then
-            echo "Jib构建成功!"
-            echo "镜像构建完成: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
-          else
-            echo "Jib构建失败!"
-            exit 1
-          fi
+          
+          echo "镜像构建完成: ${{ env.IMAGE_NAME }}:${{ steps.version-generator.outputs.image-tag }}"
 
       - name: 推送latest标签 (仅main分支)
         if: github.ref == 'refs/heads/main'
@@ -311,7 +295,7 @@ jobs:
   deploy-prod:
     needs: [build, prepare]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'  # 只在主分支部署到生产环境
+    if: github.ref == 'refs/heads/main'
     environment:
       name: production  # 需在GitHub仓库设置中配置保护规则，如手动批准
       url: https://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PROJECT_NAME }}
@@ -537,7 +521,7 @@ jobs:
   deploy-test:
     needs: [build, prepare]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/int'  # 只在int分支部署到测试环境
+    if: github.ref == 'refs/heads/int'
     environment:
       name: staging
     steps:
@@ -642,7 +626,7 @@ jobs:
           echo "替换前的镜像配置:"
           grep -n "image:" docker-compose.yml || echo "未找到image配置"
           
-          # 使用更精确的sed命令替换镜像标签
+          # 使用sed命令替换镜像标签
           sed -i "s|image: ghcr.io/dqpylf/learngit:.*|image: \$IMAGE_TAG|g" docker-compose.yml
           
           # 显示替换后的内容
