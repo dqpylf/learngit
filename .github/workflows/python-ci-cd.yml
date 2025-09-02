@@ -221,7 +221,7 @@ jobs:
         id: version-generator
         run: |
           # 提取最近的tag作为基础版本
-          LAST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v0.0.0")
+          LAST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v0.0.1")
           # 提取主版本号
           MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
           MINOR=$(echo $LAST_TAG | cut -d. -f2)
